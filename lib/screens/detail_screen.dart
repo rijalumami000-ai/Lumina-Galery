@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
 import 'package:video_player/video_player.dart';
@@ -52,9 +53,11 @@ class _DetailScreenState extends State<DetailScreen> {
     if (widget.item.isLocal) {
       try {
         final loc = await widget.item.asset!.latlngAsync();
-        if (loc.latitude != 0.0 || loc.longitude != 0.0) {
-          lat = loc.latitude;
-          lng = loc.longitude;
+        final locLat = loc.latitude;
+        final locLng = loc.longitude;
+        if (locLat != null && locLng != null && (locLat != 0.0 || locLng != 0.0)) {
+          lat = locLat;
+          lng = locLng;
         }
       } catch (e) {
         // Fallback or ignore
@@ -199,6 +202,68 @@ class _DetailScreenState extends State<DetailScreen> {
     setState(() {
       _isFav = updated.contains(widget.item.id);
     });
+  }
+
+  bool _isSharing = false;
+
+  Future<void> _shareMedia() async {
+    if (_isSharing) return;
+    setState(() { _isSharing = true; });
+
+    try {
+      if (widget.item.isLocal && widget.item.asset != null) {
+        // Get the actual file from the device
+        final File? file = await widget.item.asset!.file;
+        if (file != null) {
+          final xFile = XFile(file.path);
+          final result = await SharePlus.instance.share(
+            ShareParams(
+              files: [xFile],
+              title: widget.item.title,
+            ),
+          );
+          if (mounted && result.status == ShareResultStatus.success) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Row(
+                  children: [
+                    Icon(Icons.check_circle_rounded, color: Colors.cyanAccent, size: 18),
+                    SizedBox(width: 8),
+                    Text('Media berhasil dibagikan!', style: TextStyle(color: Colors.white)),
+                  ],
+                ),
+                backgroundColor: const Color(0xFF1A1A2E),
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+            );
+          }
+        }
+      } else if (widget.item.mockPhoto != null) {
+        // Share the URL for network images
+        await SharePlus.instance.share(
+          ShareParams(
+            text: '${widget.item.title}\n${widget.item.mockPhoto!.url}',
+            title: widget.item.title,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal membagikan: $e', style: const TextStyle(color: Colors.white)),
+            backgroundColor: Colors.redAccent,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() { _isSharing = false; });
+      }
+    }
   }
 
   void _showAddToAlbumSheet() {
@@ -420,6 +485,31 @@ class _DetailScreenState extends State<DetailScreen> {
                 ),
                 Row(
                   children: [
+                    // Share Button
+                    GestureDetector(
+                      onTap: _shareMedia,
+                      child: GlassBox(
+                        width: 40,
+                        height: 40,
+                        borderRadius: 20,
+                        blur: 10,
+                        tintColor: Colors.cyanAccent.withValues(alpha: 0.08),
+                        child: _isSharing
+                            ? const SizedBox(
+                                width: 18, height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.cyanAccent,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.share_rounded,
+                                color: Colors.cyanAccent,
+                                size: 18,
+                              ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
                     GestureDetector(
                       onTap: _toggleVaultStatus,
                       child: GlassBox(
@@ -434,7 +524,7 @@ class _DetailScreenState extends State<DetailScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 10),
                     GestureDetector(
                       onTap: _showAddToAlbumSheet,
                       child: GlassBox(
@@ -449,7 +539,7 @@ class _DetailScreenState extends State<DetailScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 10),
                     GestureDetector(
                       onTap: _toggleFavorite,
                       child: GlassBox(
