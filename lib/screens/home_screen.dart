@@ -7,6 +7,7 @@ import '../storage/database.dart';
 import '../widgets/glass_box.dart';
 import '../widgets/photo_card.dart';
 import 'detail_screen.dart';
+import 'ambient_slideshow_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -152,27 +153,56 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ],
                         ),
-                        // Refresh button
-                        GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              _isLoading = true;
-                            });
-                            _loadMedia();
-                          },
-                          child: Container(
-                            width: 44,
-                            height: 44,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Colors.white.withOpacity(0.05),
-                              border: Border.all(
-                                color: Colors.white.withOpacity(0.12),
-                                width: 1,
+                        // Action Buttons (Slideshow & Refresh)
+                        Row(
+                          children: [
+                            GestureDetector(
+                              onTap: () {
+                                if (_mediaItems.isNotEmpty) {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (context) => AmbientSlideshowScreen(items: _mediaItems),
+                                    ),
+                                  );
+                                }
+                              },
+                              child: Container(
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.blue.shade500.withOpacity(0.15),
+                                  border: Border.all(
+                                    color: Colors.blue.shade500.withOpacity(0.3),
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Icon(Icons.play_circle_fill_rounded, color: Colors.blue.shade400, size: 20),
                               ),
                             ),
-                            child: const Icon(Icons.sync_rounded, color: Colors.white, size: 20),
-                          ),
+                            const SizedBox(width: 10),
+                            GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  _isLoading = true;
+                                });
+                                _loadMedia();
+                              },
+                              child: Container(
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.white.withOpacity(0.05),
+                                  border: Border.all(
+                                    color: Colors.white.withOpacity(0.12),
+                                    width: 1,
+                                  ),
+                                ),
+                                child: const Icon(Icons.sync_rounded, color: Colors.white, size: 20),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
