@@ -1,43 +1,44 @@
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
-
-# dependencies
-node_modules/
-
-# Expo
-.expo/
-dist/
-web-build/
-expo-env.d.ts
-
-# Native
-.kotlin/
-*.orig.*
-*.jks
-*.p8
-*.p12
-*.key
-*.mobileprovision
-
-# Metro
-.metro-health-check*
-
-# debug
-npm-debug.*
-yarn-debug.*
-yarn-error.*
-
-# macOS
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
 .DS_Store
-*.pem
+.atom/
+.buildlog/
+.history
+.project
+.settings/
+.vscode/
 
-# local env files
-.env*.local
+# Flutter/Dart-specific
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+/build/
 
-# typescript
-*.tsbuildinfo
+# Android-specific
+/android/app/gradle-wrapper.properties
+/android/app/local.properties
+/android/app/flutter-apk/
+/android/app/project.iml
+/android/key.properties
+*.jks
+*.keystore
+*.apk
+*.ap_
+*.aab
 
-example
+# iOS-specific
+/ios/Flutter/Generated.xcconfig
+/ios/Flutter/flutter_export_environment.sh
+/ios/Runner/GeneratedPluginRegistrant.h
+/ios/Runner/GeneratedPluginRegistrant.m
+/ios/.symlinks/
+/ios/Pods/
 
-# generated native folders
-/ios
-/android
+# Web-specific
+/web/flutter_bootstrap.js
