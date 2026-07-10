@@ -52,9 +52,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
     final localItems = await MediaLoader.loadLocalMedia();
     List<GalleryItem> loadedItems = [];
     final vaultItems = await DatabaseHelper.getVaultItems();
+    final trashIds = await DatabaseHelper.getTrashIds();
 
     if (localItems.isNotEmpty) {
-      loadedItems = localItems.where((item) => !vaultItems.contains(item.id)).toList();
+      loadedItems = localItems.where((item) => !vaultItems.contains(item.id) && !trashIds.contains(item.id)).toList();
     } else {
       // Fallback to mock photos mapped to GalleryItem
       final mockItems = MOCK_PHOTOS.map((p) => GalleryItem(
@@ -66,7 +67,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
         mockPhoto: p,
         dateText: p.date,
       )).toList();
-      loadedItems = mockItems.where((item) => !vaultItems.contains(item.id)).toList();
+      loadedItems = mockItems.where((item) => !vaultItems.contains(item.id) && !trashIds.contains(item.id)).toList();
     }
 
     // Pre-calculate file sizes for instant smart search size filtering

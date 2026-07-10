@@ -226,6 +226,130 @@ class DatabaseHelper {
     await _saveAlbums(prefs, albums);
   }
 
+  // --- TRASH BIN ---
+  static const String _trashKey = 'lumina_trash_items';
+  static const int trashRetentionDays = 30;
+
+  /// Get all trash items (auto-cleans expired items).
+  static Future<List<TrashItem>> getTrashItems() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? trashJson = prefs.getString(_trashKey);
+    if (trashJson == null) return [];
+
+    try {
+      final List<dynamic> decoded = jsonDecode(trashJson);
+      final items = decoded.map((item) => TrashItem.fromJson(item)).toList();
+      
+      // Auto-clean expired items (older than 30 days)
+      final now = DateTime.now();
+      final validItems = items.where((item) {
+        final deletedDate = DateTime.tryParse(item.deletedAt);
+        if (deletedDate == null) return false;
+        return now.difference(deletedDate).inDays < trashRetentionDays;
+      }).toList();
+
+      // Save cleaned list if any expired items were removed
+      if (validItems.length != items.length) {
+        await _saveTrash(prefs, validItems);
+      }
+
+      return validItems;
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /// Move an item to trash (soft delete).
+  static Future<void> moveToTrash(String photoId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final items = await getTrashItems();
+
+    // Don't add duplicates
+    if (items.any((t) => t.photoId == photoId)) return;
+
+    items.add(TrashItem(
+      photoId: photoId,
+      deletedAt: DateTime.now().toIso8601String(),
+    ));
+
+    await _saveTrash(prefs, items);
+
+    // Also remove from favorites
+    final favorites = prefs.getStringList(_favoritesKey) ?? [];
+    if (favorites.contains(photoId)) {
+      favorites.remove(photoId);
+      await prefs.setStringList(_favoritesKey, favorites);
+    }
+  }
+
+  /// Move multiple items to trash in batch.
+  static Future<void> moveBatchToTrash(List<String> photoIds) async {
+    final prefs = await SharedPreferences.getInstance();
+    final items = await getTrashItems();
+    final existingIds = items.map((t) => t.photoId).toSet();
+    final now = DateTime.now().toIso8601String();
+
+    for (final id in photoIds) {
+      if (!existingIds.contains(id)) {
+        items.add(TrashItem(photoId: id, deletedAt: now));
+      }
+    }
+
+    await _saveTrash(prefs, items);
+
+    // Also remove from favorites
+    final favorites = prefs.getStringList(_favoritesKey) ?? [];
+    favorites.removeWhere((f) => photoIds.contains(f));
+    await prefs.setStringList(_favoritesKey, favorites);
+  }
+
+  /// Restore an item from trash (undo soft delete).
+  static Future<void> restoreFromTrash(String photoId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final items = await getTrashItems();
+    items.removeWhere((t) => t.photoId == photoId);
+    await _saveTrash(prefs, items);
+  }
+
+  /// Restore multiple items from trash.
+  static Future<void> restoreBatchFromTrash(List<String> photoIds) async {
+    final prefs = await SharedPreferences.getInstance();
+    final items = await getTrashItems();
+    items.removeWhere((t) => photoIds.contains(t.photoId));
+    await _saveTrash(prefs, items);
+  }
+
+  /// Permanently delete an item from trash (remove the trash record).
+  static Future<void> permanentDeleteFromTrash(String photoId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final items = await getTrashItems();
+    items.removeWhere((t) => t.photoId == photoId);
+    await _saveTrash(prefs, items);
+  }
+
+  /// Empty all trash items.
+  static Future<void> emptyTrash() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_trashKey, '[]');
+  }
+
+  /// Check if an item is in trash.
+  static Future<bool> isInTrash(String photoId) async {
+    final items = await getTrashItems();
+    return items.any((t) => t.photoId == photoId);
+  }
+
+  /// Get all trashed photo IDs (for filtering from gallery).
+  static Future<Set<String>> getTrashIds() async {
+    final items = await getTrashItems();
+    return items.map((t) => t.photoId).toSet();
+  }
+
+  static Future<void> _saveTrash(SharedPreferences prefs, List<TrashItem> items) async {
+    final String encoded = jsonEncode(items.map((t) => t.toJson()).toList());
+    await prefs.setString(_trashKey, encoded);
+  }
+
   static String _monthName(int month) {
     const months = [
       'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -235,5 +359,33 @@ class DatabaseHelper {
       return months[month - 1];
     }
     return '';
+  }
+}
+
+/// Represents a trashed media item with its deletion timestamp.
+class TrashItem {
+  final String photoId;
+  final String deletedAt;
+
+  TrashItem({required this.photoId, required this.deletedAt});
+
+  factory TrashItem.fromJson(Map<String, dynamic> json) {
+    return TrashItem(
+      photoId: json['photoId'] ?? '',
+      deletedAt: json['deletedAt'] ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'photoId': photoId,
+    'deletedAt': deletedAt,
+  };
+
+  /// Days remaining before permanent deletion.
+  int get daysRemaining {
+    final deleted = DateTime.tryParse(deletedAt);
+    if (deleted == null) return 0;
+    final expiry = deleted.add(const Duration(days: DatabaseHelper.trashRetentionDays));
+    return expiry.difference(DateTime.now()).inDays.clamp(0, DatabaseHelper.trashRetentionDays);
   }
 }

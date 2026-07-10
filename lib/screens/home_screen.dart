@@ -10,6 +10,7 @@ import '../widgets/glass_box.dart';
 import '../widgets/photo_card.dart';
 import 'detail_screen.dart';
 import 'ambient_slideshow_screen.dart';
+import 'trash_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -52,10 +53,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Future<void> _loadMedia() async {
     final localItems = await MediaLoader.loadLocalMedia();
     final vaultItems = await DatabaseHelper.getVaultItems();
+    final trashIds = await DatabaseHelper.getTrashIds();
     if (mounted) {
       setState(() {
         if (localItems.isNotEmpty) {
-          _mediaItems = localItems.where((item) => !vaultItems.contains(item.id)).toList();
+          _mediaItems = localItems.where((item) => !vaultItems.contains(item.id) && !trashIds.contains(item.id)).toList();
         } else {
           // Fallback to mock photos
           final mockItems = MOCK_PHOTOS.map((p) => GalleryItem(
@@ -67,7 +69,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             mockPhoto: p,
             dateText: p.date,
           )).toList();
-          _mediaItems = mockItems.where((item) => !vaultItems.contains(item.id)).toList();
+          _mediaItems = mockItems.where((item) => !vaultItems.contains(item.id) && !trashIds.contains(item.id)).toList();
         }
         _isLoading = false;
       });
@@ -125,37 +127,25 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => _buildConfirmDialog(
-        icon: Icons.delete_forever_rounded,
-        iconColor: Colors.redAccent,
-        title: 'Hapus $count Item?',
-        message: 'Media yang dipilih akan dihapus secara permanen dari perangkat Anda.',
-        confirmText: 'Hapus Semua',
-        confirmColor: Colors.redAccent,
+        icon: Icons.delete_rounded,
+        iconColor: Colors.orangeAccent,
+        title: 'Pindah $count Item ke Trash?',
+        message: 'Media akan dipindahkan ke Trash Bin dan dihapus otomatis setelah 30 hari.',
+        confirmText: 'Pindah ke Trash',
+        confirmColor: Colors.orangeAccent,
       ),
     );
     if (confirmed != true) return;
 
-    // Collect AssetEntity IDs for real deletion
-    final assetsToDelete = <AssetEntity>[];
-    for (final item in _mediaItems) {
-      if (_selectedIds.contains(item.id) && item.isLocal && item.asset != null) {
-        assetsToDelete.add(item.asset!);
-      }
-    }
-
-    if (assetsToDelete.isNotEmpty) {
-      final deletedIds = await PhotoManager.editor.deleteWithIds(
-        assetsToDelete.map((a) => a.id).toList(),
-      );
-      // deletedIds is the list of IDs that were successfully deleted
-    }
+    // Move to trash (soft delete) instead of permanent delete
+    await DatabaseHelper.moveBatchToTrash(_selectedIds.toList());
 
     _exitSelectMode();
     setState(() { _isLoading = true; });
     await _loadMedia();
 
     if (mounted) {
-      _showSuccessSnackbar('$count item berhasil dihapus', Icons.delete_rounded);
+      _showSuccessSnackbar('$count item dipindahkan ke Trash', Icons.delete_rounded);
     }
   }
 
@@ -856,7 +846,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
           ],
         ),
-        // Action Buttons (Slideshow & Refresh)
+        // Action Buttons (Slideshow, Trash, & Refresh)
         Row(
           children: [
             GestureDetector(
@@ -881,6 +871,31 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   ),
                 ),
                 child: Icon(Icons.play_circle_fill_rounded, color: Colors.blue.shade400, size: 20),
+              ),
+            ),
+            const SizedBox(width: 10),
+            GestureDetector(
+              onTap: () async {
+                await Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => const TrashScreen(),
+                  ),
+                );
+                // Refresh content when returning from Trash bin
+                _loadMedia();
+              },
+              child: Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.orangeAccent.withValues(alpha: 0.15),
+                  border: Border.all(
+                    color: Colors.orangeAccent.withValues(alpha: 0.3),
+                    width: 1,
+                  ),
+                ),
+                child: const Icon(Icons.delete_outline_rounded, color: Colors.orangeAccent, size: 20),
               ),
             ),
             const SizedBox(width: 10),

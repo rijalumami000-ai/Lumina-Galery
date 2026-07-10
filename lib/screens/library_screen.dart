@@ -35,9 +35,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
   Future<void> _loadData() async {
     final localItems = await MediaLoader.loadLocalMedia();
     final vaultItems = await DatabaseHelper.getVaultItems();
+    final trashIds = await DatabaseHelper.getTrashIds();
     List<GalleryItem> items = [];
     if (localItems.isNotEmpty) {
-      items = localItems.where((item) => !vaultItems.contains(item.id)).toList();
+      items = localItems.where((item) => !vaultItems.contains(item.id) && !trashIds.contains(item.id)).toList();
     } else {
       // Fallback mock items
       final mockItems = MOCK_PHOTOS.map((p) => GalleryItem(
@@ -49,7 +50,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         mockPhoto: p,
         dateText: p.date,
       )).toList();
-      items = mockItems.where((item) => !vaultItems.contains(item.id)).toList();
+      items = mockItems.where((item) => !vaultItems.contains(item.id) && !trashIds.contains(item.id)).toList();
     }
 
     final favIds = await DatabaseHelper.getFavorites();
