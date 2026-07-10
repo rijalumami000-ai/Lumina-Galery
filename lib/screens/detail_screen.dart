@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
 import 'package:video_player/video_player.dart';
@@ -28,14 +29,83 @@ class _DetailScreenState extends State<DetailScreen> {
   bool _isInVault = false;
   bool _isVideoError = false;
 
+  double? _latitude;
+  double? _longitude;
+  bool _isLoadingCoords = true;
+
   @override
   void initState() {
     super.initState();
     _checkFavorite();
     _loadAlbums();
     _checkVaultStatus();
+    _loadCoordinates();
     if (widget.item.type == GalleryItemType.video && widget.item.isLocal) {
       _initVideoPlayer();
+    }
+  }
+
+  Future<void> _loadCoordinates() async {
+    double? lat;
+    double? lng;
+
+    if (widget.item.isLocal) {
+      try {
+        final loc = await widget.item.asset!.latlngAsync();
+        if (loc.latitude != 0.0 || loc.longitude != 0.0) {
+          lat = loc.latitude;
+          lng = loc.longitude;
+        }
+      } catch (e) {
+        // Fallback or ignore
+      }
+    } else {
+      final exifLoc = widget.item.mockPhoto?.exif.location.toLowerCase() ?? '';
+      if (exifLoc.contains('tokyo') || exifLoc.contains('japan')) {
+        lat = 35.6762;
+        lng = 139.6503;
+      } else if (exifLoc.contains('paris') || exifLoc.contains('france')) {
+        lat = 48.8566;
+        lng = 2.3522;
+      } else if (exifLoc.contains('iceland')) {
+        lat = 64.9631;
+        lng = -19.0208;
+      } else if (exifLoc.contains('kyoto')) {
+        lat = 35.0116;
+        lng = 135.7681;
+      } else if (exifLoc.contains('bali') || exifLoc.contains('indonesia')) {
+        lat = -8.4095;
+        lng = 115.1889;
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _latitude = lat;
+        _longitude = lng;
+        _isLoadingCoords = false;
+      });
+    }
+  }
+
+  Future<void> _openMaps() async {
+    if (_latitude == null || _longitude == null) return;
+    
+    final googleMapsUrl = Uri.parse("https://www.google.com/maps/search/?api=1&query=$_latitude,$_longitude");
+    final appleMapsUrl = Uri.parse("maps://?q=$_latitude,$_longitude");
+
+    try {
+      if (await canLaunchUrl(googleMapsUrl)) {
+        await launchUrl(googleMapsUrl, mode: LaunchMode.externalApplication);
+      } else if (await canLaunchUrl(appleMapsUrl)) {
+        await launchUrl(appleMapsUrl, mode: LaunchMode.externalApplication);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open map application.')),
+        );
+      }
+    } catch (e) {
+      await launchUrl(googleMapsUrl, mode: LaunchMode.platformDefault);
     }
   }
 
@@ -512,6 +582,130 @@ class _DetailScreenState extends State<DetailScreen> {
                         _buildExifTile(Icons.location_on_rounded, 'Location', locationText),
                       ],
                     ),
+                    if (_latitude != null && _longitude != null) ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        height: 1,
+                        color: Colors.white.withOpacity(0.08),
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'LOCATION MAP',
+                        style: TextStyle(
+                          color: Colors.white30,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.5,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      GestureDetector(
+                        onTap: _openMaps,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: Container(
+                            height: 110,
+                            width: double.infinity,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1C1C1E),
+                              border: Border.all(
+                                color: Colors.white.withOpacity(0.06),
+                                width: 1.0,
+                              ),
+                            ),
+                            child: Stack(
+                              children: [
+                                CustomPaint(
+                                  size: const Size(double.infinity, 110),
+                                  painter: MapGridPainter(),
+                                ),
+                                Positioned(
+                                  left: 0, right: 0, top: 0, bottom: 0,
+                                  child: Center(
+                                    child: Container(
+                                      width: 48,
+                                      height: 48,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.redAccent.withOpacity(0.4),
+                                            blurRadius: 20,
+                                            spreadRadius: 6,
+                                          )
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                Center(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(
+                                        Icons.location_on_rounded,
+                                        color: Colors.redAccent,
+                                        size: 26,
+                                      ),
+                                      Container(
+                                        width: 8,
+                                        height: 3,
+                                        decoration: BoxDecoration(
+                                          color: Colors.black38,
+                                          borderRadius: BorderRadius.circular(2),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Positioned(
+                                  bottom: 0,
+                                  left: 0,
+                                  right: 0,
+                                  child: GlassBox(
+                                    borderRadius: 0,
+                                    blur: 5,
+                                    tintColor: Colors.black.withOpacity(0.4),
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          'Lat: ${_latitude!.toStringAsFixed(4)}, Lng: ${_longitude!.toStringAsFixed(4)}',
+                                          style: const TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        Row(
+                                          children: [
+                                            Text(
+                                              'Open in Maps',
+                                              style: TextStyle(
+                                                color: Colors.blue.shade300,
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Icon(
+                                              Icons.open_in_new_rounded,
+                                              color: Colors.blue.shade300,
+                                              size: 11,
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -657,3 +851,36 @@ class _DetailScreenState extends State<DetailScreen> {
     );
   }
 }
+
+class MapGridPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white.withOpacity(0.04)
+      ..strokeWidth = 1.0
+      ..style = PaintingStyle.stroke;
+
+    // Draw horizontal grid lines
+    for (double i = 0; i < size.height; i += 20) {
+      canvas.drawLine(Offset(0, i), Offset(size.width, i), paint);
+    }
+    // Draw vertical grid lines
+    for (double i = 0; i < size.width; i += 20) {
+      canvas.drawLine(Offset(i, 0), Offset(i, size.height), paint);
+    }
+
+    // Draw some stylized diagonal "streets"
+    final streetPaint = Paint()
+      ..color = Colors.white.withOpacity(0.08)
+      ..strokeWidth = 2.0
+      ..style = PaintingStyle.stroke;
+
+    canvas.drawLine(Offset(0, 30), Offset(size.width, 90), streetPaint);
+    canvas.drawLine(Offset(size.width * 0.2, 0), Offset(size.width * 0.8, size.height), streetPaint);
+    canvas.drawLine(Offset(0, size.height * 0.7), Offset(size.width, size.height * 0.2), streetPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
