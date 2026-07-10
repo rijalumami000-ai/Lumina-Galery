@@ -191,6 +191,41 @@ class DatabaseHelper {
     await prefs.setString(_pinKey, pin);
   }
 
+  /// Add multiple items to the vault in a single batch operation.
+  static Future<void> addBatchToVault(List<String> photoIds) async {
+    final prefs = await SharedPreferences.getInstance();
+    final vaultItems = prefs.getStringList(_vaultKey) ?? [];
+    final favorites = prefs.getStringList(_favoritesKey) ?? [];
+
+    for (final id in photoIds) {
+      if (!vaultItems.contains(id)) {
+        vaultItems.add(id);
+      }
+      favorites.remove(id);
+    }
+
+    await prefs.setStringList(_vaultKey, vaultItems);
+    await prefs.setStringList(_favoritesKey, favorites);
+  }
+
+  /// Add multiple items to an album in a single batch operation.
+  static Future<void> addBatchToAlbum(String albumId, List<String> photoIds) async {
+    final prefs = await SharedPreferences.getInstance();
+    final albums = await getAlbums();
+
+    for (var album in albums) {
+      if (album.id == albumId) {
+        for (final id in photoIds) {
+          if (!album.photoIds.contains(id)) {
+            album.photoIds.add(id);
+          }
+        }
+      }
+    }
+
+    await _saveAlbums(prefs, albums);
+  }
+
   static String _monthName(int month) {
     const months = [
       'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
