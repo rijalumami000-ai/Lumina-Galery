@@ -1,7 +1,8 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import '../models/photo.dart';
+import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
 import '../utils/mock_data.dart';
+import '../utils/media_loader.dart';
 import '../widgets/glass_box.dart';
 
 class StudioScreen extends StatefulWidget {
@@ -12,7 +13,10 @@ class StudioScreen extends StatefulWidget {
 }
 
 class _StudioScreenState extends State<StudioScreen> {
-  late Photo _selectedPhoto;
+  List<GalleryItem> _imageItems = [];
+  GalleryItem? _selectedItem;
+  bool _isLoading = true;
+
   double _brightness = 1.0; // 0.3 to 1.7
   double _saturation = 1.0; // 0.0 to 2.0
   double _blur = 0.0;       // 0.0 to 15.0
@@ -22,7 +26,37 @@ class _StudioScreenState extends State<StudioScreen> {
   @override
   void initState() {
     super.initState();
-    _selectedPhoto = MOCK_PHOTOS.first;
+    _loadMedia();
+  }
+
+  Future<void> _loadMedia() async {
+    final localItems = await MediaLoader.loadLocalMedia();
+    List<GalleryItem> imagesOnly = [];
+    
+    if (localItems.isNotEmpty) {
+      imagesOnly = localItems.where((item) => item.type == GalleryItemType.image).toList();
+    }
+    
+    if (imagesOnly.isEmpty) {
+      // Fallback mock items
+      imagesOnly = MOCK_PHOTOS.map((p) => GalleryItem(
+        id: p.id,
+        title: p.title,
+        description: p.description,
+        category: p.category,
+        type: GalleryItemType.image,
+        mockPhoto: p,
+        dateText: p.date,
+      )).toList();
+    }
+
+    if (mounted) {
+      setState(() {
+        _imageItems = imagesOnly;
+        _selectedItem = imagesOnly.first;
+        _isLoading = false;
+      });
+    }
   }
 
   void _resetFilters() {
@@ -64,7 +98,6 @@ class _StudioScreenState extends State<StudioScreen> {
     });
   }
 
-  // Helper matrix generators for nested ColorFiltered widgets
   List<double> _getBrightnessMatrix() {
     final b = _brightness;
     return [
@@ -102,6 +135,15 @@ class _StudioScreenState extends State<StudioScreen> {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
+
+    if (_isLoading) {
+      return const Scaffold(
+        backgroundColor: Color(0xFF0F0F11),
+        body: Center(
+          child: CircularProgressIndicator(color: Colors.blue),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F0F11),
@@ -163,14 +205,14 @@ class _StudioScreenState extends State<StudioScreen> {
                 child: ListView.builder(
                   physics: const BouncingScrollPhysics(),
                   scrollDirection: Axis.horizontal,
-                  itemCount: MOCK_PHOTOS.length,
+                  itemCount: _imageItems.length,
                   itemBuilder: (context, index) {
-                    final photo = MOCK_PHOTOS[index];
-                    final isSelected = photo.id == _selectedPhoto.id;
+                    final item = _imageItems[index];
+                    final isSelected = item.id == _selectedItem?.id;
                     return GestureDetector(
                       onTap: () {
                         setState(() {
-                          _selectedPhoto = photo;
+                          _selectedItem = item;
                           _resetFilters();
                         });
                       },
@@ -178,15 +220,25 @@ class _StudioScreenState extends State<StudioScreen> {
                         margin: const EdgeInsets.only(right: 12.0),
                         width: 50,
                         height: 50,
-                        decoration: BoxDecoration(
+                        child: ClipRRect(
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: isSelected ? Colors.blue.shade400 : Colors.transparent,
-                            width: 2,
-                          ),
-                          image: DecorationImage(
-                            image: NetworkImage(photo.thumbnailUrl),
-                            fit: BoxFit.cover,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: isSelected ? Colors.blue.shade400 : Colors.transparent,
+                                width: 2,
+                              ),
+                            ),
+                            child: item.isLocal
+                                ? AssetEntityImage(
+                                    item.asset!,
+                                    isOriginal: false,
+                                    fit: BoxFit.cover,
+                                  )
+                                : Image.network(
+                                    item.mockPhoto!.thumbnailUrl,
+                                    fit: BoxFit.cover,
+                                  ),
                           ),
                         ),
                       ),
@@ -219,14 +271,24 @@ class _StudioScreenState extends State<StudioScreen> {
                               colorFilter: ColorFilter.matrix(_getSaturationMatrix()),
                               child: ColorFiltered(
                                 colorFilter: ColorFilter.matrix(_getSepiaMatrix()),
-                                child: Image.network(
-                                  _selectedPhoto.url,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (c, o, s) => const Icon(
-                                    Icons.broken_image,
-                                    color: Colors.grey,
-                                  ),
-                                ),
+                                child: _selectedItem!.isLocal
+                                    ? AssetEntityImage(
+                                        _selectedItem!.asset!,
+                                        isOriginal: true,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (c, o, s) => const Icon(
+                                          Icons.broken_image,
+                                          color: Colors.grey,
+                                        ),
+                                      )
+                                    : Image.network(
+                                        _selectedItem!.mockPhoto!.url,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (c, o, s) => const Icon(
+                                          Icons.broken_image,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
                               ),
                             ),
                           ),

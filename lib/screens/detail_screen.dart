@@ -1,13 +1,17 @@
+import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import '../models/photo.dart';
+import 'package:photo_manager/photo_manager.dart';
+import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
+import 'package:video_player/video_player.dart';
+import '../utils/media_loader.dart';
 import '../storage/database.dart';
 import '../widgets/glass_box.dart';
 
 class DetailScreen extends StatefulWidget {
-  final Photo photo;
+  final GalleryItem item;
 
-  const DetailScreen({Key? key, required this.photo}) : super(key: key);
+  const DetailScreen({Key? key, required this.item}) : super(key: key);
 
   @override
   _DetailScreenState createState() => _DetailScreenState();
@@ -18,15 +22,64 @@ class _DetailScreenState extends State<DetailScreen> {
   bool _showMetadata = true;
   List<CustomAlbum> _albums = [];
 
+  // Video player variables
+  VideoPlayerController? _videoController;
+  bool _isVideoInitialized = false;
+  bool _isVideoError = false;
+
   @override
   void initState() {
     super.initState();
     _checkFavorite();
     _loadAlbums();
+    if (widget.item.type == GalleryItemType.video && widget.item.isLocal) {
+      _initVideoPlayer();
+    }
+  }
+
+  @override
+  void dispose() {
+    _videoController?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _initVideoPlayer() async {
+    try {
+      final File? file = await widget.item.asset!.file;
+      if (file != null) {
+        _videoController = VideoPlayerController.file(file)
+          ..initialize().then((_) {
+            if (mounted) {
+              setState(() {
+                _isVideoInitialized = true;
+              });
+              // Auto-play the video
+              _videoController!.play();
+              _videoController!.setLooping(true);
+            }
+          }).catchError((err) {
+            print("Video init error: $err");
+            if (mounted) {
+              setState(() {
+                _isVideoError = true;
+              });
+            }
+          });
+      } else {
+        setState(() {
+          _isVideoError = true;
+        });
+      }
+    } catch (e) {
+      print("Error loading video file: $e");
+      setState(() {
+        _isVideoError = true;
+      });
+    }
   }
 
   Future<void> _checkFavorite() async {
-    final fav = await DatabaseHelper.isFavorite(widget.photo.id);
+    final fav = await DatabaseHelper.isFavorite(widget.item.id);
     if (mounted) {
       setState(() {
         _isFav = fav;
@@ -44,9 +97,9 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 
   Future<void> _toggleFavorite() async {
-    final updated = await DatabaseHelper.toggleFavorite(widget.photo.id);
+    final updated = await DatabaseHelper.toggleFavorite(widget.item.id);
     setState(() {
-      _isFav = updated.contains(widget.photo.id);
+      _isFav = updated.contains(widget.item.id);
     });
   }
 
@@ -109,7 +162,7 @@ class _DetailScreenState extends State<DetailScreen> {
                         itemCount: _albums.length,
                         itemBuilder: (context, index) {
                           final album = _albums[index];
-                          final alreadyAdded = album.photoIds.contains(widget.photo.id);
+                          final alreadyAdded = album.photoIds.contains(widget.item.id);
 
                           return ListTile(
                             leading: Icon(
@@ -134,7 +187,7 @@ class _DetailScreenState extends State<DetailScreen> {
                             onTap: alreadyAdded
                                 ? null
                                 : () async {
-                                    await DatabaseHelper.addPhotoToAlbum(album.id, widget.photo.id);
+                                    await DatabaseHelper.addPhotoToAlbum(album.id, widget.item.id);
                                     Navigator.of(context).pop();
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
@@ -158,45 +211,91 @@ class _DetailScreenState extends State<DetailScreen> {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
+    final isVideo = widget.item.type == GalleryItemType.video;
+
+    // Resolve EXIF details
+    String cameraText = 'Local Media';
+    String lensText = 'System File';
+    String exposureText = 'Original';
+    String locationText = 'Local Storage';
+
+    if (widget.item.isLocal) {
+      final asset = widget.item.asset!;
+      exposureText = '${asset.width} x ${asset.height}';
+      locationText = (asset.latitude != null && asset.longitude != null) 
+          ? '${asset.latitude!.toStringAsFixed(3)}, ${asset.longitude!.toStringAsFixed(3)}'
+          : 'Local Album';
+      cameraText = isVideo ? 'Native Video' : 'Native Photo';
+      lensText = asset.mimeType ?? 'Unknown MIME';
+    } else {
+      final mock = widget.item.mockPhoto!;
+      cameraText = mock.exif.camera;
+      lensText = mock.exif.lens;
+      exposureText = '${mock.exif.shutterSpeed} @ ${mock.exif.aperture}';
+      locationText = mock.exif.location;
+    }
 
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Dynamic Background Blur (Ambient Glow)
-          Image.network(
-            widget.photo.url,
-            fit: BoxFit.cover,
-            errorBuilder: (c, o, s) => Container(color: Colors.black),
-          ),
+          // Ambient Glow Background (Uses local asset or network image)
+          if (widget.item.isLocal)
+            AssetEntityImage(
+              widget.item.asset!,
+              isOriginal: false,
+              fit: BoxFit.cover,
+              errorBuilder: (c, o, s) => Container(color: Colors.black),
+            )
+          else
+            Image.network(
+              widget.item.mockPhoto!.url,
+              fit: BoxFit.cover,
+              errorBuilder: (c, o, s) => Container(color: Colors.black),
+            ),
           BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 50, sigmaY: 50),
             child: Container(
-              color: Colors.black.withOpacity(0.45),
+              color: Colors.black.withOpacity(0.55),
             ),
           ),
 
-          // Main Image Viewer (InteractiveViewer for Zooming & Panning)
+          // Main Media Viewer
           Center(
-            child: InteractiveViewer(
-              minScale: 1.0,
-              maxScale: 4.0,
-              child: Hero(
-                tag: 'hero-${widget.photo.id}',
-                child: Image.network(
-                  widget.photo.url,
-                  fit: BoxFit.contain,
-                  width: size.width,
-                  height: size.height * 0.7,
-                  errorBuilder: (c, o, s) => const Icon(
-                    Icons.broken_image,
-                    color: Colors.white,
-                    size: 64,
+            child: isVideo
+                ? _buildVideoPlayerWidget(size)
+                : InteractiveViewer(
+                    minScale: 1.0,
+                    maxScale: 4.0,
+                    child: Hero(
+                      tag: 'hero-${widget.item.id}',
+                      child: widget.item.isLocal
+                          ? AssetEntityImage(
+                              widget.item.asset!,
+                              isOriginal: true,
+                              fit: BoxFit.contain,
+                              width: size.width,
+                              height: size.height * 0.7,
+                              errorBuilder: (c, o, s) => const Icon(
+                                Icons.broken_image,
+                                color: Colors.white,
+                                size: 64,
+                              ),
+                            )
+                          : Image.network(
+                              widget.item.mockPhoto!.url,
+                              fit: BoxFit.contain,
+                              width: size.width,
+                              height: size.height * 0.7,
+                              errorBuilder: (c, o, s) => const Icon(
+                                Icons.broken_image,
+                                color: Colors.white,
+                                size: 64,
+                              ),
+                            ),
+                    ),
                   ),
-                ),
-              ),
-            ),
           ),
 
           // Top Action Buttons
@@ -288,45 +387,49 @@ class _DetailScreenState extends State<DetailScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Row(
-                          children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(18),
-                              child: Image.network(
-                                widget.photo.authorAvatar,
+                        Expanded(
+                          child: Row(
+                            children: [
+                              Container(
                                 width: 36,
                                 height: 36,
-                                fit: BoxFit.cover,
-                                errorBuilder: (c, o, s) => Container(
-                                  width: 36,
-                                  height: 36,
-                                  color: Colors.blue,
-                                  child: const Icon(Icons.person, color: Colors.white, size: 18),
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.blue.shade400.withOpacity(0.2),
+                                ),
+                                child: Icon(
+                                  isVideo ? Icons.play_circle_fill_rounded : Icons.photo_size_select_actual_rounded,
+                                  color: Colors.blue.shade400,
+                                  size: 20,
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 12),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  widget.photo.title,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      widget.item.title,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    Text(
+                                      widget.item.dateText,
+                                      style: TextStyle(
+                                        color: Colors.white.withOpacity(0.6),
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                Text(
-                                  'by ${widget.photo.author}',
-                                  style: TextStyle(
-                                    color: Colors.white.withOpacity(0.6),
-                                    fontSize: 11,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
+                              ),
+                            ],
+                          ),
                         ),
                         IconButton(
                           icon: Icon(
@@ -343,7 +446,7 @@ class _DetailScreenState extends State<DetailScreen> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      widget.photo.description,
+                      widget.item.description,
                       style: TextStyle(
                         color: Colors.white.withOpacity(0.85),
                         fontSize: 12.5,
@@ -360,14 +463,10 @@ class _DetailScreenState extends State<DetailScreen> {
                       crossAxisSpacing: 10,
                       mainAxisSpacing: 10,
                       children: [
-                        _buildExifTile(Icons.camera_rounded, 'Camera', widget.photo.exif.camera),
-                        _buildExifTile(Icons.camera_roll_rounded, 'Lens', widget.photo.exif.lens),
-                        _buildExifTile(
-                          Icons.shutter_speed_rounded, 
-                          'Exposure', 
-                          '${widget.photo.exif.shutterSpeed} @ ${widget.photo.exif.aperture}'
-                        ),
-                        _buildExifTile(Icons.location_on_rounded, 'Location', widget.photo.exif.location),
+                        _buildExifTile(Icons.camera_rounded, 'Camera', cameraText),
+                        _buildExifTile(Icons.camera_roll_rounded, 'MIME/Lens', lensText),
+                        _buildExifTile(Icons.shutter_speed_rounded, 'Resolution', exposureText),
+                        _buildExifTile(Icons.location_on_rounded, 'Location', locationText),
                       ],
                     ),
                   ],
@@ -409,6 +508,60 @@ class _DetailScreenState extends State<DetailScreen> {
                     ),
                   ),
                 ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVideoPlayerWidget(Size size) {
+    if (_isVideoError) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.error_outline_rounded, color: Colors.redAccent.shade400, size: 48),
+          const SizedBox(height: 12),
+          const Text('Error loading video', style: TextStyle(color: Colors.white70)),
+        ],
+      );
+    }
+
+    if (!_isVideoInitialized) {
+      return const CircularProgressIndicator(color: Colors.blue);
+    }
+
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          if (_videoController!.value.isPlaying) {
+            _videoController!.pause();
+          } else {
+            _videoController!.play();
+          }
+        });
+      },
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Actual Video player
+          AspectRatio(
+            aspectRatio: _videoController!.value.aspectRatio,
+            child: VideoPlayer(_videoController!),
+          ),
+
+          // Play/Pause Overlay Indicator
+          if (!_videoController!.value.isPlaying)
+            GlassBox(
+              width: 64,
+              height: 64,
+              borderRadius: 32,
+              blur: 5,
+              tintColor: Colors.black.withOpacity(0.3),
+              child: const Icon(
+                Icons.play_arrow_rounded,
+                color: Colors.white,
+                size: 36,
               ),
             ),
         ],

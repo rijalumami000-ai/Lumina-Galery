@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:photo_manager/photo_manager.dart';
+import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
 import '../models/photo.dart';
 import '../storage/database.dart';
 import '../utils/mock_data.dart';
+import '../utils/media_loader.dart';
 import '../widgets/glass_box.dart';
 import 'detail_screen.dart';
 
@@ -13,9 +16,11 @@ class LibraryScreen extends StatefulWidget {
 }
 
 class _LibraryScreenState extends State<LibraryScreen> {
-  List<Photo> _favoritePhotos = [];
+  List<GalleryItem> _mediaItems = [];
+  List<GalleryItem> _favoriteItems = [];
   List<CustomAlbum> _albums = [];
   CustomAlbum? _selectedAlbum;
+  bool _isLoading = true;
 
   final TextEditingController _albumNameController = TextEditingController();
   final TextEditingController _albumDescController = TextEditingController();
@@ -27,21 +32,40 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   Future<void> _loadData() async {
-    final favIds = await DatabaseHelper.getFavorites();
-    final favs = MOCK_PHOTOS.where((photo) => favIds.contains(photo.id)).toList();
+    final localItems = await MediaLoader.loadLocalMedia();
+    List<GalleryItem> items = [];
+    if (localItems.isNotEmpty) {
+      items = localItems;
+    } else {
+      // Fallback mock items
+      items = MOCK_PHOTOS.map((p) => GalleryItem(
+        id: p.id,
+        title: p.title,
+        description: p.description,
+        category: p.category,
+        type: GalleryItemType.image,
+        mockPhoto: p,
+        dateText: p.date,
+      )).toList();
+    }
 
+    final favIds = await DatabaseHelper.getFavorites();
+    final favs = items.where((item) => favIds.contains(item.id)).toList();
     final albs = await DatabaseHelper.getAlbums();
 
     if (mounted) {
       setState(() {
-        _favoritePhotos = favs;
+        _mediaItems = items;
+        _favoriteItems = favs;
         _albums = albs;
-        // update active selection reference if it exists
+        _isLoading = false;
+        
         if (_selectedAlbum != null) {
-          _selectedAlbum = albs.firstWhere(
-            (a) => a.id == _selectedAlbum!.id,
-            orElse: () => _selectedAlbum!,
-          );
+          try {
+            _selectedAlbum = albs.firstWhere((a) => a.id == _selectedAlbum!.id);
+          } catch (_) {
+            _selectedAlbum = null;
+          }
         }
       });
     }
@@ -84,7 +108,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                // Input name
                 TextField(
                   controller: _albumNameController,
                   style: const TextStyle(color: Colors.white, fontSize: 14),
@@ -102,7 +125,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                // Input description
                 TextField(
                   controller: _albumDescController,
                   style: const TextStyle(color: Colors.white, fontSize: 14),
@@ -197,7 +219,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         return AlertDialog(
           backgroundColor: const Color(0xFF1C1C1E),
           title: const Text('Delete Album', style: TextStyle(color: Colors.white)),
-          content: const Text('Are you sure you want to delete this album? Photos inside will not be deleted.', style: TextStyle(color: Colors.white70)),
+          content: const Text('Are you sure you want to delete this album? Media inside will not be deleted.', style: TextStyle(color: Colors.white70)),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
@@ -222,9 +244,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 
-  Photo? _getPhotoById(String id) {
+  GalleryItem? _getItemById(String id) {
     try {
-      return MOCK_PHOTOS.firstWhere((p) => p.id == id);
+      return _mediaItems.firstWhere((p) => p.id == id);
     } catch (_) {
       return null;
     }
@@ -232,7 +254,16 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    _loadData(); // keep favorites and album details in sync
+    _loadData(); // Sync list values automatically on navigate-back
+
+    if (_isLoading) {
+      return const Scaffold(
+        backgroundColor: Color(0xFF0F0F11),
+        body: Center(
+          child: CircularProgressIndicator(color: Colors.blue),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F0F11),
@@ -305,7 +336,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                               Icon(Icons.create_new_folder_rounded, color: Colors.white.withOpacity(0.3), size: 36),
                               const SizedBox(height: 12),
                               Text(
-                                'Create albums to group your favorite photos',
+                                'Create albums to group your media files',
                                 style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 12),
                                 textAlign: TextAlign.center,
                               ),
@@ -322,7 +353,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                           itemBuilder: (context, index) {
                             final album = _albums[index];
                             final hasCover = album.photoIds.isNotEmpty;
-                            final coverPhoto = hasCover ? _getPhotoById(album.photoIds.first) : null;
+                            final coverItem = hasCover ? _getItemById(album.photoIds.first) : null;
 
                             return Stack(
                               children: [
@@ -342,26 +373,32 @@ class _LibraryScreenState extends State<LibraryScreen> {
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
-                                          // Album cover image
+                                          // Album cover
                                           Expanded(
                                             child: Container(
                                               width: 120,
                                               decoration: BoxDecoration(
                                                 color: Colors.white.withOpacity(0.04),
-                                                image: coverPhoto != null
-                                                    ? DecorationImage(
-                                                        image: NetworkImage(coverPhoto.thumbnailUrl),
-                                                        fit: BoxFit.cover,
-                                                      )
-                                                    : null,
                                               ),
-                                              child: coverPhoto == null
+                                              child: coverItem == null
                                                   ? Icon(
                                                       Icons.collections_rounded,
                                                       color: Colors.white.withOpacity(0.3),
                                                       size: 32,
                                                     )
-                                                  : null,
+                                                  : ClipRRect(
+                                                      borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                                                      child: coverItem.isLocal
+                                                          ? AssetEntityImage(
+                                                              coverItem.asset!,
+                                                              isOriginal: false,
+                                                              fit: BoxFit.cover,
+                                                            )
+                                                          : Image.network(
+                                                              coverItem.mockPhoto!.thumbnailUrl,
+                                                              fit: BoxFit.cover,
+                                                            ),
+                                                    ),
                                             ),
                                           ),
                                           // Album details text
@@ -382,7 +419,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                                                 ),
                                                 const SizedBox(height: 2),
                                                 Text(
-                                                  '${album.photoIds.length} photos',
+                                                  '${album.photoIds.length} items',
                                                   style: TextStyle(
                                                     color: Colors.white.withOpacity(0.5),
                                                     fontSize: 9,
@@ -476,7 +513,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       padding: const EdgeInsets.all(24.0),
                       child: Center(
                         child: Text(
-                          'Album is empty. Go to Home or Explore to add photos!',
+                          'Album is empty. Go to Home or Explore to add media files!',
                           style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 12),
                           textAlign: TextAlign.center,
                         ),
@@ -494,13 +531,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       ),
                       itemBuilder: (context, index) {
                         final id = _selectedAlbum!.photoIds[index];
-                        final photo = _getPhotoById(id);
-                        if (photo == null) return const SizedBox();
+                        final item = _getItemById(id);
+                        if (item == null) return const SizedBox();
+                        final isVideo = item.type == GalleryItemType.video;
 
                         return GestureDetector(
                           onTap: () {
                             Navigator.of(context).push(
-                              MaterialPageRoute(builder: (context) => DetailScreen(photo: photo)),
+                              MaterialPageRoute(builder: (context) => DetailScreen(item: item)),
                             );
                           },
                           child: ClipRRect(
@@ -508,7 +546,29 @@ class _LibraryScreenState extends State<LibraryScreen> {
                             child: Stack(
                               fit: StackFit.expand,
                               children: [
-                                Image.network(photo.thumbnailUrl, fit: BoxFit.cover),
+                                // Thumbnail
+                                item.isLocal
+                                    ? AssetEntityImage(
+                                        item.asset!,
+                                        isOriginal: false,
+                                        fit: BoxFit.cover,
+                                      )
+                                    : Image.network(item.mockPhoto!.thumbnailUrl, fit: BoxFit.cover),
+                                
+                                // Video indicator
+                                if (isVideo)
+                                  Positioned(
+                                    top: 8,
+                                    right: 8,
+                                    child: GlassBox(
+                                      borderRadius: 12,
+                                      blur: 5,
+                                      tintColor: Colors.black.withOpacity(0.4),
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 10),
+                                    ),
+                                  ),
+
                                 Positioned(
                                   bottom: 0,
                                   left: 0,
@@ -521,7 +581,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                                     ),
                                     padding: const EdgeInsets.all(8),
                                     child: Text(
-                                      photo.title,
+                                      item.title,
                                       style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
@@ -539,7 +599,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
             // Favorites Section
             Text(
-              'FAVORITE PHOTOS (${_favoritePhotos.length})',
+              'FAVORITE ITEMS (${_favoriteItems.length})',
               style: const TextStyle(
                 color: Colors.white24,
                 fontSize: 10,
@@ -549,7 +609,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ),
             const SizedBox(height: 12),
             
-            _favoritePhotos.isEmpty
+            _favoriteItems.isEmpty
                 ? GlassBox(
                     borderRadius: 16,
                     blur: 10,
@@ -560,7 +620,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                           const Icon(Icons.favorite_rounded, color: Colors.redAccent, size: 36),
                           const SizedBox(height: 12),
                           Text(
-                            'Tap the heart icon on any photo to add it here',
+                            'Tap the heart icon on any photo or video to add it here',
                             style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 12),
                             textAlign: TextAlign.center,
                           ),
@@ -571,7 +631,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 : GridView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
-                    itemCount: _favoritePhotos.length,
+                    itemCount: _favoriteItems.length,
                     gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 2,
                       crossAxisSpacing: 16,
@@ -579,11 +639,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       childAspectRatio: 1,
                     ),
                     itemBuilder: (context, index) {
-                      final photo = _favoritePhotos[index];
+                      final item = _favoriteItems[index];
+                      final isVideo = item.type == GalleryItemType.video;
+
                       return GestureDetector(
                         onTap: () {
                           Navigator.of(context).push(
-                            MaterialPageRoute(builder: (context) => DetailScreen(photo: photo)),
+                            MaterialPageRoute(builder: (context) => DetailScreen(item: item)),
                           );
                         },
                         child: ClipRRect(
@@ -591,7 +653,29 @@ class _LibraryScreenState extends State<LibraryScreen> {
                           child: Stack(
                             fit: StackFit.expand,
                             children: [
-                              Image.network(photo.thumbnailUrl, fit: BoxFit.cover),
+                              // Thumbnail
+                              item.isLocal
+                                  ? AssetEntityImage(
+                                      item.asset!,
+                                      isOriginal: false,
+                                      fit: BoxFit.cover,
+                                    )
+                                  : Image.network(item.mockPhoto!.thumbnailUrl, fit: BoxFit.cover),
+                              
+                              // Video indicator
+                              if (isVideo)
+                                Positioned(
+                                  top: 8,
+                                  right: 8,
+                                  child: GlassBox(
+                                    borderRadius: 12,
+                                    blur: 5,
+                                    tintColor: Colors.black.withOpacity(0.4),
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 10),
+                                  ),
+                                ),
+
                               Positioned(
                                 bottom: 0,
                                 left: 0,
@@ -604,7 +688,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                                   ),
                                   padding: const EdgeInsets.all(8),
                                   child: Text(
-                                    photo.title,
+                                    item.title,
                                     style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
@@ -618,7 +702,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     },
                   ),
             
-            // Padding bottom spacer for floating bar
             const SizedBox(height: 110),
           ],
         ),

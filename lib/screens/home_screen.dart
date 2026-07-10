@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
 import '../models/photo.dart';
 import '../utils/mock_data.dart';
+import '../utils/media_loader.dart';
 import '../widgets/glass_box.dart';
 import '../widgets/photo_card.dart';
 import 'detail_screen.dart';
@@ -14,18 +16,77 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   String _selectedCategory = 'All';
+  List<GalleryItem> _mediaItems = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMedia();
+  }
+
+  Future<void> _loadMedia() async {
+    final localItems = await MediaLoader.loadLocalMedia();
+    if (mounted) {
+      setState(() {
+        if (localItems.isNotEmpty) {
+          _mediaItems = localItems;
+        } else {
+          // Fallback to mock photos
+          _mediaItems = MOCK_PHOTOS.map((p) => GalleryItem(
+            id: p.id,
+            title: p.title,
+            description: p.description,
+            category: p.category,
+            type: GalleryItemType.image,
+            mockPhoto: p,
+            dateText: p.date,
+          )).toList();
+        }
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
-    
-    // Featured shots (first 3)
-    final featuredPhotos = MOCK_PHOTOS.sublist(0, 3);
 
-    // Filtered grid photos
-    final filteredPhotos = _selectedCategory == 'All'
-        ? MOCK_PHOTOS
-        : MOCK_PHOTOS.where((photo) => photo.category == _selectedCategory).toList();
+    if (_isLoading) {
+      return const Scaffold(
+        backgroundColor: Color(0xFF0F0F11),
+        body: Center(
+          child: CircularProgressIndicator(color: Colors.blue),
+        ),
+      );
+    }
+
+    // Featured items (first 3 from our active items list)
+    final featuredItems = _mediaItems.take(3).toList();
+
+    // Dynamically build category list depending on items
+    final Set<String> dynamicCategories = {"All"};
+    for (var item in _mediaItems) {
+      if (item.isLocal) {
+        dynamicCategories.add(item.type == GalleryItemType.video ? 'Video' : 'Photos');
+      } else {
+        dynamicCategories.add(item.category);
+      }
+    }
+    final List<String> currentCategories = dynamicCategories.toList();
+
+    // Filter items based on selected category
+    final filteredItems = _selectedCategory == 'All'
+        ? _mediaItems
+        : _mediaItems.where((item) {
+            if (item.isLocal) {
+              if (_selectedCategory == 'Video') return item.type == GalleryItemType.video;
+              if (_selectedCategory == 'Photos') return item.type == GalleryItemType.image;
+              return false;
+            } else {
+              return item.category == _selectedCategory;
+            }
+          }).toList();
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F0F11),
@@ -77,7 +138,9 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             ),
                             Text(
-                              'Immersive Fine Art Gallery',
+                              _mediaItems.first.isLocal
+                                  ? 'Your Native Device Gallery'
+                                  : 'Immersive Fine Art Gallery',
                               style: TextStyle(
                                 color: Colors.white.withOpacity(0.4),
                                 fontSize: 11,
@@ -86,22 +149,26 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ],
                         ),
-                        // Profile Avatar
-                        Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: Colors.white.withOpacity(0.12),
-                              width: 1,
-                            ),
-                            image: const DecorationImage(
-                              image: NetworkImage(
-                                'https://images.unsplash.com/profile-1502914728514-411306c59b20?auto=format&fit=crop&w=64&h=64&q=80',
+                        // Refresh button
+                        GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _isLoading = true;
+                            });
+                            _loadMedia();
+                          },
+                          child: Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.white.withOpacity(0.05),
+                              border: Border.all(
+                                color: Colors.white.withOpacity(0.12),
+                                width: 1,
                               ),
-                              fit: BoxFit.cover,
                             ),
+                            child: const Icon(Icons.sync_rounded, color: Colors.white, size: 20),
                           ),
                         ),
                       ],
@@ -132,74 +199,83 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: ListView.builder(
                           physics: const BouncingScrollPhysics(),
                           scrollDirection: Axis.horizontal,
-                          itemCount: featuredPhotos.length,
+                          itemCount: featuredItems.length,
                           padding: const EdgeInsets.symmetric(horizontal: 20.0),
                           itemBuilder: (context, index) {
-                            final photo = featuredPhotos[index];
+                            final item = featuredItems[index];
                             return GestureDetector(
                               onTap: () {
                                 Navigator.of(context).push(
-                                  MaterialPageRoute(builder: (context) => DetailScreen(photo: photo)),
+                                  MaterialPageRoute(builder: (context) => DetailScreen(item: item)),
                                 );
                               },
                               child: Container(
                                 margin: const EdgeInsets.only(right: 16.0),
                                 width: size.width - 40,
-                                decoration: BoxDecoration(
+                                child: ClipRRect(
                                   borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(
-                                    color: Colors.white.withOpacity(0.08),
-                                    width: 1,
-                                  ),
-                                  image: DecorationImage(
-                                    image: NetworkImage(photo.url),
-                                    fit: BoxFit.cover,
-                                  ),
-                                ),
-                                child: Stack(
-                                  children: [
-                                    Positioned(
-                                      bottom: 16,
-                                      left: 16,
-                                      right: 16,
-                                      child: GlassBox(
-                                        borderRadius: 16,
-                                        blur: 15,
-                                        padding: const EdgeInsets.all(12),
-                                        child: Row(
-                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Text(
-                                                  photo.title,
-                                                  style: const TextStyle(
-                                                    color: Colors.white,
-                                                    fontSize: 14,
-                                                    fontWeight: FontWeight.bold,
-                                                  ),
-                                                ),
-                                                Text(
-                                                  'by ${photo.author}',
-                                                  style: TextStyle(
-                                                    color: Colors.white.withOpacity(0.6),
-                                                    fontSize: 10,
-                                                  ),
-                                                ),
-                                              ],
+                                  child: Stack(
+                                    fit: StackFit.expand,
+                                    children: [
+                                      // Image
+                                      item.isLocal
+                                          ? AssetEntityImage(
+                                              item.asset!,
+                                              isOriginal: true,
+                                              fit: BoxFit.cover,
+                                            )
+                                          : Image.network(
+                                              item.mockPhoto!.url,
+                                              fit: BoxFit.cover,
                                             ),
-                                            const Icon(
-                                              Icons.arrow_outward_rounded,
-                                              color: Colors.blue,
-                                              size: 20,
-                                            ),
-                                          ],
+                                      // Floating Title Tag
+                                      Positioned(
+                                        bottom: 16,
+                                        left: 16,
+                                        right: 16,
+                                        child: GlassBox(
+                                          borderRadius: 16,
+                                          blur: 15,
+                                          padding: const EdgeInsets.all(12),
+                                          child: Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    Text(
+                                                      item.title,
+                                                      style: const TextStyle(
+                                                        color: Colors.white,
+                                                        fontSize: 14,
+                                                        fontWeight: FontWeight.bold,
+                                                      ),
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                    ),
+                                                    Text(
+                                                      item.isLocal ? 'Local Media' : 'by ${item.mockPhoto!.author}',
+                                                      style: TextStyle(
+                                                        color: Colors.white.withOpacity(0.6),
+                                                        fontSize: 10,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              const Icon(
+                                                Icons.arrow_outward_rounded,
+                                                color: Colors.blue,
+                                                size: 20,
+                                              ),
+                                            ],
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
                             );
@@ -218,10 +294,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: ListView.builder(
                       physics: const BouncingScrollPhysics(),
                       scrollDirection: Axis.horizontal,
-                      itemCount: CATEGORIES.length,
+                      itemCount: currentCategories.length,
                       padding: const EdgeInsets.symmetric(horizontal: 20.0),
                       itemBuilder: (context, index) {
-                        final cat = CATEGORIES[index];
+                        final cat = currentCategories[index];
                         final isSelected = _selectedCategory == cat;
                         return GestureDetector(
                           onTap: () {
@@ -270,7 +346,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'EXPLORE ${_selectedCategory.toUpperCase()} (${filteredPhotos.length})',
+                          'EXPLORE ${_selectedCategory.toUpperCase()} (${filteredItems.length})',
                           style: const TextStyle(
                             color: Colors.white24,
                             fontSize: 10,
@@ -285,19 +361,18 @@ class _HomeScreenState extends State<HomeScreen> {
                             // Column 1
                             Expanded(
                               child: Column(
-                                children: _buildGridColumn(filteredPhotos, 0),
+                                children: _buildGridColumn(filteredItems, 0),
                               ),
                             ),
                             const SizedBox(width: 16),
                             // Column 2
                             Expanded(
                               child: Column(
-                                children: _buildGridColumn(filteredPhotos, 1),
+                                children: _buildGridColumn(filteredItems, 1),
                               ),
                             ),
                           ],
                         ),
-                        // Add extra padding at the bottom for the floating tab bar
                         const SizedBox(height: 110),
                       ],
                     ),
@@ -311,17 +386,15 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Generates column items alternating height to simulate masonry look
-  List<Widget> _buildGridColumn(List<Photo> photos, int columnIndex) {
+  List<Widget> _buildGridColumn(List<GalleryItem> items, int columnIndex) {
     final columnWidgets = <Widget>[];
-    for (int i = 0; i < photos.length; i++) {
+    for (int i = 0; i < items.length; i++) {
       if (i % 2 == columnIndex) {
-        // dynamic heights (e.g. index-based height alternate)
         final height = (i % 3 == 0) ? 220.0 : 155.0;
         columnWidgets.add(
           Padding(
             padding: const EdgeInsets.only(bottom: 16.0),
-            child: PhotoCard(photo: photos[i], height: height),
+            child: PhotoCard(item: items[i], height: height),
           ),
         );
       }

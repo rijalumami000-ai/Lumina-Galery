@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:photo_manager/photo_manager.dart';
+import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
 import '../models/photo.dart';
 import '../storage/database.dart';
 import '../utils/mock_data.dart';
+import '../utils/media_loader.dart';
 import '../widgets/glass_box.dart';
 import 'detail_screen.dart';
 
@@ -15,6 +18,8 @@ class ExploreScreen extends StatefulWidget {
 class _ExploreScreenState extends State<ExploreScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  List<GalleryItem> _mediaItems = [];
+  bool _isLoading = true;
   int _favCount = 0;
   int _albumCount = 0;
 
@@ -22,6 +27,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
   void initState() {
     super.initState();
     _loadStats();
+    _loadMedia();
   }
 
   Future<void> _loadStats() async {
@@ -35,6 +41,29 @@ class _ExploreScreenState extends State<ExploreScreen> {
     }
   }
 
+  Future<void> _loadMedia() async {
+    final localItems = await MediaLoader.loadLocalMedia();
+    if (mounted) {
+      setState(() {
+        if (localItems.isNotEmpty) {
+          _mediaItems = localItems;
+        } else {
+          // Fallback to mock photos mapped to GalleryItem
+          _mediaItems = MOCK_PHOTOS.map((p) => GalleryItem(
+            id: p.id,
+            title: p.title,
+            description: p.description,
+            category: p.category,
+            type: GalleryItemType.image,
+            mockPhoto: p,
+            dateText: p.date,
+          )).toList();
+        }
+        _isLoading = false;
+      });
+    }
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -43,26 +72,62 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   @override
   Widget build(BuildContext context) {
-    _loadStats(); // keep stats updated when navigating back
-    
-    // Filter photos based on search query
-    final searchedPhotos = _searchQuery.isEmpty
-        ? MOCK_PHOTOS
-        : MOCK_PHOTOS.where((photo) =>
-            photo.title.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-            photo.description.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-            photo.author.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-            photo.category.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-            photo.exif.camera.toLowerCase().contains(_searchQuery.toLowerCase())
-          ).toList();
+    _loadStats(); // Keep stats updated
 
-    // Calculate camera gear distribution stats
-    final Map<String, int> cameraCounts = {};
-    for (var photo in MOCK_PHOTOS) {
-      final brand = photo.exif.camera.split(' ')[0];
-      cameraCounts[brand] = (cameraCounts[brand] ?? 0) + 1;
+    if (_isLoading) {
+      return const Scaffold(
+        backgroundColor: Color(0xFF0F0F11),
+        body: Center(
+          child: CircularProgressIndicator(color: Colors.blue),
+        ),
+      );
     }
-    final int totalCameras = cameraCounts.values.fold(0, (a, b) => a + b);
+
+    // Filter items based on search query
+    final searchedItems = _searchQuery.isEmpty
+        ? _mediaItems
+        : _mediaItems.where((item) {
+            final query = _searchQuery.toLowerCase();
+            final titleMatch = item.title.toLowerCase().contains(query);
+            final descMatch = item.description.toLowerCase().contains(query);
+            
+            if (item.isLocal) {
+              final mimeMatch = item.asset!.mimeType?.toLowerCase().contains(query) ?? false;
+              final typeMatch = (item.type == GalleryItemType.video ? 'video' : 'photo').contains(query);
+              return titleMatch || descMatch || mimeMatch || typeMatch;
+            } else {
+              final mock = item.mockPhoto!;
+              final cameraMatch = mock.exif.camera.toLowerCase().contains(query);
+              final authorMatch = mock.author.toLowerCase().contains(query);
+              final catMatch = mock.category.toLowerCase().contains(query);
+              return titleMatch || descMatch || cameraMatch || authorMatch || catMatch;
+            }
+          }).toList();
+
+    // Determine chart details dynamically
+    final isLocal = _mediaItems.first.isLocal;
+    final Map<String, int> chartCounts = {};
+    String chartTitle = 'Camera Gear Distribution';
+    IconData chartIcon = Icons.bar_chart_rounded;
+
+    if (isLocal) {
+      chartTitle = 'Media Formats (MIME)';
+      chartIcon = Icons.data_usage_rounded;
+      for (var item in _mediaItems) {
+        final mime = item.asset!.mimeType?.split('/').last.toUpperCase() ?? 'OTHER';
+        chartCounts[mime] = (chartCounts[mime] ?? 0) + 1;
+      }
+    } else {
+      chartTitle = 'Camera Gear Distribution';
+      chartIcon = Icons.camera_alt_rounded;
+      for (var item in _mediaItems) {
+        final brand = item.mockPhoto!.exif.camera.split(' ')[0];
+        chartCounts[brand] = (chartCounts[brand] ?? 0) + 1;
+      }
+    }
+
+    final int totalChartSum = chartCounts.values.fold(0, (a, b) => a + b);
+    final totalVideos = _mediaItems.where((item) => item.type == GalleryItemType.video).length;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F0F11),
@@ -87,7 +152,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Discover shots, search and analyze EXIF statistics',
+                    isLocal 
+                        ? 'Search and analyze local storage MIME formats'
+                        : 'Discover shots, search and analyze EXIF statistics',
                     style: TextStyle(
                       color: Colors.white.withOpacity(0.4),
                       fontSize: 12,
@@ -97,6 +164,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
               ),
             ),
 
+            // Search Bar
             Padding(
               padding: const EdgeInsets.only(left: 20.0, right: 20.0, bottom: 20.0),
               child: GlassBox(
@@ -107,7 +175,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   controller: _searchController,
                   style: const TextStyle(color: Colors.white, fontSize: 14),
                   decoration: InputDecoration(
-                    hintText: 'Search title, photographer, or camera...',
+                    hintText: isLocal 
+                        ? 'Search file name, type (photo/video), or MIME...' 
+                        : 'Search title, photographer, or camera...',
                     hintStyle: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 13),
                     border: InputBorder.none,
                     icon: Icon(Icons.search_rounded, color: Colors.white.withOpacity(0.5)),
@@ -140,7 +210,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
                 children: [
                   // Show stats ONLY if search query is empty
                   if (_searchQuery.isEmpty) ...[
-                    // Staggered overview section title
                     const Text(
                       'GALLERY OVERVIEW',
                       style: TextStyle(
@@ -155,7 +224,11 @@ class _ExploreScreenState extends State<ExploreScreen> {
                     // Metrics cards row
                     Row(
                       children: [
-                        _buildMetricTile('Photos', '${MOCK_PHOTOS.length}', Colors.blue.shade400),
+                        _buildMetricTile(
+                          isLocal ? 'Videos' : 'Photos', 
+                          isLocal ? '$totalVideos' : '${_mediaItems.length}', 
+                          Colors.blue.shade400
+                        ),
                         const SizedBox(width: 12),
                         _buildMetricTile('Favorites', '$_favCount', Colors.red.shade400),
                         const SizedBox(width: 12),
@@ -164,7 +237,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                     ),
                     const SizedBox(height: 24),
 
-                    // Camera stats graph card
+                    // Stats graph card
                     GlassBox(
                       borderRadius: 20,
                       blur: 15,
@@ -173,12 +246,12 @@ class _ExploreScreenState extends State<ExploreScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(
-                            children: const [
-                              Icon(Icons.bar_chart_rounded, color: Colors.blue, size: 18),
-                              SizedBox(width: 8),
+                            children: [
+                              Icon(chartIcon, color: Colors.blue, size: 18),
+                              const SizedBox(width: 8),
                               Text(
-                                'Camera Gear Distribution',
-                                style: TextStyle(
+                                chartTitle,
+                                style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 13,
                                   fontWeight: FontWeight.bold,
@@ -188,10 +261,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
                           ),
                           const SizedBox(height: 16),
                           Column(
-                            children: cameraCounts.entries.map((entry) {
-                              final brand = entry.key;
+                            children: chartCounts.entries.map((entry) {
+                              final label = entry.key;
                               final count = entry.value;
-                              final percentage = (count / totalCameras) * 100;
+                              final percentage = (count / totalChartSum) * 100;
                               return Padding(
                                 padding: const EdgeInsets.only(bottom: 12.0),
                                 child: Row(
@@ -199,7 +272,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                     SizedBox(
                                       width: 60,
                                       child: Text(
-                                        brand,
+                                        label,
                                         style: const TextStyle(
                                           color: Colors.white,
                                           fontSize: 11,
@@ -211,7 +284,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                       child: ClipRRect(
                                         borderRadius: BorderRadius.circular(3),
                                         child: LinearProgressIndicator(
-                                          value: count / totalCameras,
+                                          value: count / totalChartSum,
                                           backgroundColor: Colors.white.withOpacity(0.08),
                                           valueColor: AlwaysStoppedAnimation<Color>(Colors.blue.shade400),
                                           minHeight: 6,
@@ -243,7 +316,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
                   // Discovery Title
                   Text(
-                    _searchQuery.isEmpty ? 'DISCOVER ALL PHOTOS' : 'SEARCH RESULTS (${searchedPhotos.length})',
+                    _searchQuery.isEmpty ? 'DISCOVER ALL ITEMS' : 'SEARCH RESULTS (${searchedItems.length})',
                     style: const TextStyle(
                       color: Colors.white24,
                       fontSize: 10,
@@ -253,7 +326,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  if (searchedPhotos.isEmpty)
+                  if (searchedItems.isEmpty)
                     Center(
                       child: Padding(
                         padding: const EdgeInsets.symmetric(vertical: 40.0),
@@ -262,7 +335,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                             Icon(Icons.search_off_rounded, color: Colors.white.withOpacity(0.3), size: 48),
                             const SizedBox(height: 12),
                             Text(
-                              'No photos match "$_searchQuery"',
+                              'No items match "$_searchQuery"',
                               style: TextStyle(color: Colors.white.withOpacity(0.5)),
                             ),
                           ],
@@ -274,7 +347,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                     GridView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
-                      itemCount: searchedPhotos.length,
+                      itemCount: searchedItems.length,
                       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: 2,
                         crossAxisSpacing: 16,
@@ -282,11 +355,13 @@ class _ExploreScreenState extends State<ExploreScreen> {
                         childAspectRatio: 1,
                       ),
                       itemBuilder: (context, index) {
-                        final photo = searchedPhotos[index];
+                        final item = searchedItems[index];
+                        final isVideo = item.type == GalleryItemType.video;
+
                         return GestureDetector(
                           onTap: () {
                             Navigator.of(context).push(
-                              MaterialPageRoute(builder: (context) => DetailScreen(photo: photo)),
+                              MaterialPageRoute(builder: (context) => DetailScreen(item: item)),
                             );
                           },
                           child: ClipRRect(
@@ -294,7 +369,42 @@ class _ExploreScreenState extends State<ExploreScreen> {
                             child: Stack(
                               fit: StackFit.expand,
                               children: [
-                                Image.network(photo.thumbnailUrl, fit: BoxFit.cover),
+                                // Thumbnail
+                                item.isLocal
+                                    ? AssetEntityImage(
+                                        item.asset!,
+                                        isOriginal: false,
+                                        fit: BoxFit.cover,
+                                      )
+                                    : Image.network(item.mockPhoto!.thumbnailUrl, fit: BoxFit.cover),
+                                
+                                // Video indicator
+                                if (isVideo)
+                                  Positioned(
+                                    top: 8,
+                                    right: 8,
+                                    child: GlassBox(
+                                      borderRadius: 12,
+                                      blur: 5,
+                                      tintColor: Colors.black.withOpacity(0.4),
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 10),
+                                          if (item.durationText.isNotEmpty) ...[
+                                            const SizedBox(width: 2),
+                                            Text(
+                                              item.durationText,
+                                              style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
+                                            ),
+                                          ]
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+
+                                // Title Glass Overlay
                                 Positioned(
                                   bottom: 0,
                                   left: 0,
@@ -314,7 +424,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         Text(
-                                          photo.title,
+                                          item.title,
                                           style: const TextStyle(
                                             color: Colors.white,
                                             fontSize: 11,
@@ -324,7 +434,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                           overflow: TextOverflow.ellipsis,
                                         ),
                                         Text(
-                                          photo.author,
+                                          item.isLocal ? 'Local Storage' : item.mockPhoto!.author,
                                           style: TextStyle(
                                             color: Colors.white.withOpacity(0.5),
                                             fontSize: 9,
@@ -343,7 +453,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       },
                     ),
                   
-                  // Margin spacing at bottom
                   const SizedBox(height: 110),
                 ],
               ),
