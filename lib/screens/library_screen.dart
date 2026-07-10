@@ -7,6 +7,7 @@ import '../utils/mock_data.dart';
 import '../utils/media_loader.dart';
 import '../widgets/glass_box.dart';
 import 'detail_screen.dart';
+import 'vault_lock_screen.dart';
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({Key? key}) : super(key: key);
@@ -33,12 +34,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   Future<void> _loadData() async {
     final localItems = await MediaLoader.loadLocalMedia();
+    final vaultItems = await DatabaseHelper.getVaultItems();
     List<GalleryItem> items = [];
     if (localItems.isNotEmpty) {
-      items = localItems;
+      items = localItems.where((item) => !vaultItems.contains(item.id)).toList();
     } else {
       // Fallback mock items
-      items = MOCK_PHOTOS.map((p) => GalleryItem(
+      final mockItems = MOCK_PHOTOS.map((p) => GalleryItem(
         id: p.id,
         title: p.title,
         description: p.description,
@@ -47,6 +49,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         mockPhoto: p,
         dateText: p.date,
       )).toList();
+      items = mockItems.where((item) => !vaultItems.contains(item.id)).toList();
     }
 
     final favIds = await DatabaseHelper.getFavorites();
@@ -273,26 +276,49 @@ class _LibraryScreenState extends State<LibraryScreen> {
           physics: const BouncingScrollPhysics(),
           padding: const EdgeInsets.symmetric(horizontal: 20.0),
           children: [
-            // Header Title
+            // Header Title with Vault Button
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    'My Library',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'My Library',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Your personal custom spaces & favorites',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.4),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Your personal custom spaces & favorites',
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.4),
-                      fontSize: 12,
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (context) => const VaultLockScreen()),
+                      );
+                    },
+                    child: GlassBox(
+                      width: 44,
+                      height: 44,
+                      borderRadius: 22,
+                      blur: 10,
+                      child: const Icon(
+                        Icons.lock_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
                     ),
                   ),
                 ],

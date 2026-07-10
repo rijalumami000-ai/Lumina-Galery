@@ -25,6 +25,7 @@ class _DetailScreenState extends State<DetailScreen> {
   // Video player variables
   VideoPlayerController? _videoController;
   bool _isVideoInitialized = false;
+  bool _isInVault = false;
   bool _isVideoError = false;
 
   @override
@@ -32,6 +33,7 @@ class _DetailScreenState extends State<DetailScreen> {
     super.initState();
     _checkFavorite();
     _loadAlbums();
+    _checkVaultStatus();
     if (widget.item.type == GalleryItemType.video && widget.item.isLocal) {
       _initVideoPlayer();
     }
@@ -94,6 +96,32 @@ class _DetailScreenState extends State<DetailScreen> {
         _albums = albs;
       });
     }
+  }
+
+  Future<void> _checkVaultStatus() async {
+    final locked = await DatabaseHelper.isInVault(widget.item.id);
+    if (mounted) {
+      setState(() {
+        _isInVault = locked;
+      });
+    }
+  }
+
+  Future<void> _toggleVaultStatus() async {
+    final updated = await DatabaseHelper.toggleVaultItem(widget.item.id);
+    setState(() {
+      _isInVault = updated.contains(widget.item.id);
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(_isInVault 
+            ? 'Media locked in Private Vault!' 
+            : 'Media unlocked and restored to public gallery!'),
+        backgroundColor: _isInVault ? Colors.blue.shade600 : Colors.green.shade600,
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   Future<void> _toggleFavorite() async {
@@ -322,6 +350,21 @@ class _DetailScreenState extends State<DetailScreen> {
                 ),
                 Row(
                   children: [
+                    GestureDetector(
+                      onTap: _toggleVaultStatus,
+                      child: GlassBox(
+                        width: 40,
+                        height: 40,
+                        borderRadius: 20,
+                        blur: 10,
+                        child: Icon(
+                          _isInVault ? Icons.lock_open_rounded : Icons.lock_outline_rounded,
+                          color: _isInVault ? Colors.blue.shade400 : Colors.white,
+                          size: 18,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
                     GestureDetector(
                       onTap: _showAddToAlbumSheet,
                       child: GlassBox(

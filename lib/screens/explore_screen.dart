@@ -43,13 +43,14 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   Future<void> _loadMedia() async {
     final localItems = await MediaLoader.loadLocalMedia();
+    final vaultItems = await DatabaseHelper.getVaultItems();
     if (mounted) {
       setState(() {
         if (localItems.isNotEmpty) {
-          _mediaItems = localItems;
+          _mediaItems = localItems.where((item) => !vaultItems.contains(item.id)).toList();
         } else {
           // Fallback to mock photos mapped to GalleryItem
-          _mediaItems = MOCK_PHOTOS.map((p) => GalleryItem(
+          final mockItems = MOCK_PHOTOS.map((p) => GalleryItem(
             id: p.id,
             title: p.title,
             description: p.description,
@@ -58,6 +59,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
             mockPhoto: p,
             dateText: p.date,
           )).toList();
+          _mediaItems = mockItems.where((item) => !vaultItems.contains(item.id)).toList();
         }
         _isLoading = false;
       });

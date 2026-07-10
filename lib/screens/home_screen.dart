@@ -3,6 +3,7 @@ import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
 import '../models/photo.dart';
 import '../utils/mock_data.dart';
 import '../utils/media_loader.dart';
+import '../storage/database.dart';
 import '../widgets/glass_box.dart';
 import '../widgets/photo_card.dart';
 import 'detail_screen.dart';
@@ -27,13 +28,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _loadMedia() async {
     final localItems = await MediaLoader.loadLocalMedia();
+    final vaultItems = await DatabaseHelper.getVaultItems();
     if (mounted) {
       setState(() {
         if (localItems.isNotEmpty) {
-          _mediaItems = localItems;
+          _mediaItems = localItems.where((item) => !vaultItems.contains(item.id)).toList();
         } else {
           // Fallback to mock photos
-          _mediaItems = MOCK_PHOTOS.map((p) => GalleryItem(
+          final mockItems = MOCK_PHOTOS.map((p) => GalleryItem(
             id: p.id,
             title: p.title,
             description: p.description,
@@ -42,6 +44,7 @@ class _HomeScreenState extends State<HomeScreen> {
             mockPhoto: p,
             dateText: p.date,
           )).toList();
+          _mediaItems = mockItems.where((item) => !vaultItems.contains(item.id)).toList();
         }
         _isLoading = false;
       });

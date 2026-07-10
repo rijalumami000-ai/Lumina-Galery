@@ -146,6 +146,51 @@ class DatabaseHelper {
     await prefs.setString(_albumsKey, encoded);
   }
 
+  static const String _vaultKey = 'lumina_vault_items';
+  static const String _pinKey = 'lumina_vault_pin';
+
+  // --- PRIVATE VAULT ---
+
+  static Future<List<String>> getVaultItems() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getStringList(_vaultKey) ?? [];
+  }
+
+  static Future<List<String>> toggleVaultItem(String photoId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final vaultItems = prefs.getStringList(_vaultKey) ?? [];
+
+    if (vaultItems.contains(photoId)) {
+      vaultItems.remove(photoId);
+    } else {
+      vaultItems.add(photoId);
+      // Remove from favorites as well if locked
+      final favorites = prefs.getStringList(_favoritesKey) ?? [];
+      if (favorites.contains(photoId)) {
+        favorites.remove(photoId);
+        await prefs.setStringList(_favoritesKey, favorites);
+      }
+    }
+
+    await prefs.setStringList(_vaultKey, vaultItems);
+    return vaultItems;
+  }
+
+  static Future<bool> isInVault(String photoId) async {
+    final vaultItems = await getVaultItems();
+    return vaultItems.contains(photoId);
+  }
+
+  static Future<String?> getVaultPin() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_pinKey);
+  }
+
+  static Future<void> setVaultPin(String pin) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_pinKey, pin);
+  }
+
   static String _monthName(int month) {
     const months = [
       'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
