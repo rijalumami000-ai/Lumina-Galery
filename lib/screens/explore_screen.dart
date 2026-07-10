@@ -7,6 +7,7 @@ import '../utils/mock_data.dart';
 import '../utils/media_loader.dart';
 import '../widgets/glass_box.dart';
 import 'detail_screen.dart';
+import 'storage_analyzer_screen.dart';
 
 class ExploreScreen extends StatefulWidget {
   const ExploreScreen({Key? key}) : super(key: key);
@@ -311,6 +312,68 @@ class _ExploreScreenState extends State<ExploreScreen> {
                             }).toList(),
                           ),
                         ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Storage Analyzer Launcher Card
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(builder: (context) => const StorageAnalyzerScreen()),
+                        );
+                      },
+                      child: GlassBox(
+                        borderRadius: 20,
+                        blur: 15,
+                        tintColor: Colors.blue.shade900.withOpacity(0.12),
+                        border: Border.all(
+                          color: Colors.blue.shade500.withOpacity(0.3),
+                          width: 1.0,
+                        ),
+                        padding: const EdgeInsets.all(16.0),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Colors.blue.shade500.withOpacity(0.2),
+                              ),
+                              child: Icon(Icons.disc_full_rounded, color: Colors.blue.shade400, size: 22),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Storage Analyzer',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Analyze space and clean up heavy media files',
+                                    style: TextStyle(
+                                      color: Colors.white.withOpacity(0.5),
+                                      fontSize: 10.5,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Icon(
+                              Icons.chevron_right_rounded,
+                              color: Colors.white.withOpacity(0.4),
+                              size: 24,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                     const SizedBox(height: 24),
