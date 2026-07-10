@@ -53,8 +53,8 @@ class _DetailScreenState extends State<DetailScreen> {
     if (widget.item.isLocal) {
       try {
         final loc = await widget.item.asset!.latlngAsync();
-        final locLat = loc.latitude;
-        final locLng = loc.longitude;
+        final locLat = loc?.latitude;
+        final locLng = loc?.longitude;
         if (locLat != null && locLng != null && (locLat != 0.0 || locLng != 0.0)) {
           lat = locLat;
           lng = locLng;

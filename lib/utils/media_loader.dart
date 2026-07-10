@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:photo_manager/photo_manager.dart';
 import '../models/photo.dart';
 
@@ -32,6 +33,7 @@ class GalleryItem {
 class MediaLoader {
   // Request native permission
   static Future<bool> requestPermission() async {
+    if (kIsWeb) return false;
     // Request permission for images and videos
     final PermissionState ps = await PhotoManager.requestPermissionExtend();
     return ps.isAuth;
@@ -39,6 +41,7 @@ class MediaLoader {
 
   // Load local media items from the device
   static Future<List<GalleryItem>> loadLocalMedia({int count = 100}) async {
+    if (kIsWeb) return [];
     final bool hasPermission = await requestPermission();
     if (!hasPermission) {
       return [];
