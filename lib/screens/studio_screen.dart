@@ -22,6 +22,7 @@ class _StudioScreenState extends State<StudioScreen> {
   double _blur = 0.0;       // 0.0 to 15.0
   double _sepia = 0.0;      // 0.0 to 1.0
   bool _isSaving = false;
+  bool _isAiEnhancing = false;
 
   @override
   void initState() {
@@ -95,6 +96,60 @@ class _StudioScreenState extends State<StudioScreen> {
           ),
         );
       }
+    });
+  }
+
+  void _optimizeWithAi() {
+    if (_selectedItem == null) return;
+    
+    setState(() {
+      _isAiEnhancing = true;
+    });
+    
+    Future.delayed(const Duration(milliseconds: 1200), () {
+      if (!mounted) return;
+      
+      final item = _selectedItem!;
+      final title = item.title.toLowerCase();
+      final category = item.category.toLowerCase();
+      
+      double targetBrightness = 1.10;
+      double targetSaturation = 1.20;
+      double targetSepia = 0.0;
+      double targetBlur = 0.0;
+      
+      // Personalized photography profiles
+      if (title.contains('dark') || title.contains('night') || title.contains('shadow') || category.contains('night')) {
+        targetBrightness = 1.30;
+        targetSaturation = 1.25;
+      } else if (category.contains('nature') || category.contains('landscape') || title.contains('forest') || title.contains('mountain')) {
+        targetBrightness = 1.05;
+        targetSaturation = 1.45;
+      } else if (category.contains('portrait') || title.contains('face') || title.contains('people')) {
+        targetBrightness = 0.95;
+        targetSaturation = 0.90;
+        targetSepia = 0.20;
+        targetBlur = 2.0;
+      } else if (category.contains('minimalist') || title.contains('white') || title.contains('clean')) {
+        targetBrightness = 1.15;
+        targetSaturation = 0.80;
+      }
+      
+      setState(() {
+        _brightness = targetBrightness;
+        _saturation = targetSaturation;
+        _sepia = targetSepia;
+        _blur = targetBlur;
+        _isAiEnhancing = false;
+      });
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✨ Lumina AI: Photo colors optimized successfully!'),
+          backgroundColor: Colors.blueAccent,
+          duration: Duration(seconds: 2),
+        ),
+      );
     });
   }
 
@@ -263,35 +318,67 @@ class _StudioScreenState extends State<StudioScreen> {
                           maxHeight: size.height * 0.35,
                         ),
                         color: const Color(0xFF1C1C1E),
-                        child: ImageFiltered(
-                          imageFilter: ImageFilter.blur(sigmaX: _blur, sigmaY: _blur),
-                          child: ColorFiltered(
-                            colorFilter: ColorFilter.matrix(_getBrightnessMatrix()),
-                            child: ColorFiltered(
-                              colorFilter: ColorFilter.matrix(_getSaturationMatrix()),
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            ImageFiltered(
+                              imageFilter: ImageFilter.blur(sigmaX: _blur, sigmaY: _blur),
                               child: ColorFiltered(
-                                colorFilter: ColorFilter.matrix(_getSepiaMatrix()),
-                                child: _selectedItem!.isLocal
-                                    ? AssetEntityImage(
-                                        _selectedItem!.asset!,
-                                        isOriginal: true,
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (c, o, s) => const Icon(
-                                          Icons.broken_image,
-                                          color: Colors.grey,
-                                        ),
-                                      )
-                                    : Image.network(
-                                        _selectedItem!.mockPhoto!.url,
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (c, o, s) => const Icon(
-                                          Icons.broken_image,
-                                          color: Colors.grey,
-                                        ),
-                                      ),
+                                colorFilter: ColorFilter.matrix(_getBrightnessMatrix()),
+                                child: ColorFiltered(
+                                  colorFilter: ColorFilter.matrix(_getSaturationMatrix()),
+                                  child: ColorFiltered(
+                                    colorFilter: ColorFilter.matrix(_getSepiaMatrix()),
+                                    child: _selectedItem!.isLocal
+                                        ? AssetEntityImage(
+                                            _selectedItem!.asset!,
+                                            isOriginal: true,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (c, o, s) => const Icon(
+                                              Icons.broken_image,
+                                              color: Colors.grey,
+                                            ),
+                                          )
+                                        : Image.network(
+                                            _selectedItem!.mockPhoto!.url,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (c, o, s) => const Icon(
+                                              Icons.broken_image,
+                                              color: Colors.grey,
+                                            ),
+                                          ),
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
+                            if (_isAiEnhancing)
+                              Positioned.fill(
+                                child: GlassBox(
+                                  borderRadius: 0,
+                                  blur: 15,
+                                  tintColor: Colors.black.withOpacity(0.55),
+                                  padding: const EdgeInsets.all(16),
+                                  child: Center(
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const CircularProgressIndicator(color: Colors.blue),
+                                        const SizedBox(height: 16),
+                                        const Text(
+                                          'Lumina AI analyzing colors...',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                     ),
@@ -345,26 +432,59 @@ class _StudioScreenState extends State<StudioScreen> {
                     ),
                     const SizedBox(height: 20),
                     
-                    // Action Button
-                    GestureDetector(
-                      onTap: _isSaving ? null : _exportPhoto,
-                      child: Container(
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: Colors.blue.shade500,
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Center(
-                          child: Text(
-                            _isSaving ? 'Rendering...' : 'Export Edited Photo',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
+                    // Action Buttons Row (AI Optimize + Export)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: _isSaving || _isAiEnhancing ? null : _optimizeWithAi,
+                            child: GlassBox(
+                              height: 48,
+                              borderRadius: 14,
+                              blur: 10,
+                              tintColor: Colors.blue.shade900.withOpacity(0.15),
+                              border: Border.all(
+                                color: Colors.blue.shade400.withOpacity(0.5),
+                                width: 1.2,
+                              ),
+                              padding: EdgeInsets.zero,
+                              child: Center(
+                                child: Text(
+                                  _isAiEnhancing ? 'Analyzing...' : '✨ Lumina AI',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
                         ),
-                      ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: _isSaving || _isAiEnhancing ? null : _exportPhoto,
+                            child: Container(
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: Colors.blue.shade500,
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  _isSaving ? 'Rendering...' : 'Export Photo',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

@@ -87,7 +87,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
         final isVideo = i % 4 == 0;
         sizes[loadedItems[i].id] = isVideo 
             ? (20 + (i * 5)) * 1024 * 1024 
-            : (2 + (i * 0.5)) * 1024 * 1024;
+            : ((2 + (i * 0.5)) * 1024 * 1024).toInt();
       }
     }
 
